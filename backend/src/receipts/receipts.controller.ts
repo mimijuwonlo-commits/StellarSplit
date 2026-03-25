@@ -36,7 +36,16 @@ export class ReceiptsController {
     @UploadedFile() file: Express.Multer.File,
     @Req() req: AuthRequest,
   ) {
-    return this.service.upload(splitId, file, req.user.walletAddress);
+    return this.service.uploadWithOcr(splitId, file, req.user.walletAddress);
+  }
+
+  @Post("upload-standalone")
+  @UseInterceptors(FileInterceptor("file"))
+  async uploadStandalone(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: AuthRequest,
+  ) {
+    return this.service.uploadStandalone(file, req.user.walletAddress);
   }
 
   @Get("split/:splitId")
