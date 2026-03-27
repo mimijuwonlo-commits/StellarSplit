@@ -103,9 +103,12 @@ fn test_admin_can_update_fee_and_treasury() {
         &creator,
         &String::from_str(&env, "A"),
         &1_000,
+        &Map::new(&env),
+        &None,
+        &false,
         &obligations_a,
         &None,
-        &None,
+        
     );
     client.deposit(&split_a, &participant, &1_000);
     client.release_funds(&split_a);
@@ -159,6 +162,7 @@ fn test_fees_collected_event_emitted() {
         &creator,
         &String::from_str(&env, "Event"),
         &1_000,
+        &Map::new(&env),
         &obligations,
         &None,
         &false,
@@ -186,20 +190,21 @@ fn test_upgrade_version_admin() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Auth, InvalidAction)")] // Missing admin auth
+#[should_panic(expected = "HostError: Error(Auth, InvalidAction)")] // Unauthorized
 fn test_upgrade_version_non_admin_fails() {
     let (env, client, _, creator, _, _, _) = setup();
 
-    // Disable blanket auth mocking so we can assert on authorization failures.
-    env.set_auths(&[]);
+    env.mock_all_auths(); // Reset mocks to require specific auth
 
-    // Switch to creator auth only — upgrade_version requires admin auth and must fail.
-    client.env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+    // Switch to creator auth
+    let mut args = Vec::new(&env);
+    args.push_back(String::from_str(&env, "1.1.0").into_val(&env));
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
         address: &creator,
         invoke: &soroban_sdk::testutils::MockAuthInvoke {
             contract: &client.address,
             fn_name: "upgrade_version",
-            args: (String::from_str(&env, "1.1.0"),).into_val(&env),
+            args,
             sub_invokes: &[],
         },
     }]);
@@ -208,6 +213,7 @@ fn test_upgrade_version_non_admin_fails() {
 }
 
 #[test]
+#[should_panic(expected = "HostError: Error(Contract, #15)")] // InvalidVersion
 fn test_partial_deposits() {
     let (env, client, _admin, creator, participant, token_client, _) = setup();
     let p2 = Address::generate(&env);
@@ -296,7 +302,7 @@ fn test_upgrade_version_invalid_semver_fails() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #11)")] // InvalidVersion
+#[should_panic(expected = "HostError: Error(Contract, #15)")] // InvalidVersion
 fn test_initialize_invalid_version_fails() {
     let env = Env::default();
     env.mock_all_auths();

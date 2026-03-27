@@ -141,6 +141,9 @@ impl SplitEscrowContract {
         };
 
         let metadata = Map::new(&env);
+
+        // Whitelist functionality is supported via add/remove calls, but default is disabled.
+
         let split_id = storage::get_next_split_id(&env);
         storage::bump_next_split_id(&env);
 
@@ -183,6 +186,41 @@ impl SplitEscrowContract {
         split.note = note.clone();
         storage::set_split(&env, &split);
         events::emit_note_updated(&env, split_id, &note);
+        Ok(())
+    }
+
+    pub fn cancel_split(env: Env, split_id: u64) -> Result<(), Error> {
+        let mut split = storage::get_split(&env, split_id).ok_or(Error::SplitNotFound)?;
+        // Only the split creator can cancel/refund.
+        split.creator.require_auth();
+
+        if split.status == SplitStatus::Released || split.status == SplitStatus::Cancelled {
+            return Err(Error::SplitNotActive);
+        }
+
+        let token_address = storage::get_token(&env);
+        let token_client = token::Client::new(&env, &token_address);
+
+        // Refund all distinct participants.
+        let participants_len = split.participants.len();
+        let mut i = 0u32;
+        while i < participants_len {
+            let participant = split.participants.get(i).unwrap();
+            let amount = split.balances.get(participant.clone()).unwrap_or(0i128);
+            if amount > 0 {
+                token_client.transfer(&env.current_contract_address(), &participant, &amount);
+                // Zero out balances to prevent accidental double-refund.
+                split.balances.set(participant, 0i128);
+            }
+            i += 1;
+        }
+
+        // Clear participants list; split is now cancelled and cannot be released.
+        split.participants = Vec::new(&env);
+        split.deposited_amount = 0;
+        split.status = SplitStatus::Cancelled;
+        storage::set_split(&env, &split);
+        events::emit_cancelled(&env, split_id);
         Ok(())
     }
 
@@ -284,43 +322,6 @@ impl SplitEscrowContract {
         split.status = SplitStatus::Released;
         storage::set_split(&env, &split);
         events::emit_released(&env, split_id, creator_amount);
-        Ok(())
-    }
-
-    /// Cancel a split and refund all deposited participant balances.
-    /// Used when a dispute is upheld (raiser wins).
-    pub fn cancel_split(env: Env, split_id: u64) -> Result<(), Error> {
-        let mut split = storage::get_split(&env, split_id).ok_or(Error::SplitNotFound)?;
-        // Only the split creator can cancel/refund.
-        split.creator.require_auth();
-
-        if split.status == SplitStatus::Released || split.status == SplitStatus::Cancelled {
-            return Err(Error::SplitNotActive);
-        }
-
-        let token_address = storage::get_token(&env);
-        let token_client = token::Client::new(&env, &token_address);
-
-        // Refund all distinct participants.
-        let participants_len = split.participants.len();
-        let mut i = 0u32;
-        while i < participants_len {
-            let participant = split.participants.get(i).unwrap();
-            let amount = split.balances.get(participant.clone()).unwrap_or(0i128);
-            if amount > 0 {
-                token_client.transfer(&env.current_contract_address(), &participant, &amount);
-                // Zero out balances to prevent accidental double-refund.
-                split.balances.set(participant, 0i128);
-            }
-            i += 1;
-        }
-
-        // Clear participants list; split is now cancelled and cannot be released.
-        split.participants = Vec::new(&env);
-        split.deposited_amount = 0;
-        split.status = SplitStatus::Cancelled;
-        storage::set_split(&env, &split);
-        events::emit_cancelled(&env, split_id);
         Ok(())
     }
 
