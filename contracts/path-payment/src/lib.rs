@@ -225,7 +225,20 @@ impl PathPaymentContract {
             return Ok(current_amount);
         }
 
-        let router = storage::get_swap_router(&env).ok_or(Error::SwapFailed)?;
+        let router = match storage::get_swap_router(&env) {
+            Some(r) => r,
+            None => {
+                let to_asset = path.get(1).unwrap();
+                events::emit_swap_failed(
+                    &env,
+                    &source_addr,
+                    &to_asset.address().clone(),
+                    amount_in,
+                    "no_router_set",
+                );
+                return Err(Error::SwapFailed);
+            }
+        };
         for i in 0..path.len() - 1 {
             let to_asset = path.get(i + 1).unwrap();
             let to_addr = to_asset.address().clone();
@@ -236,7 +249,7 @@ impl PathPaymentContract {
                     current_amount = out;
                     current_asset = to_addr;
                 }
-                Ok(out) => {
+                Ok(_out) => {
                     events::emit_swap_failed(
                         &env,
                         &current_asset,
