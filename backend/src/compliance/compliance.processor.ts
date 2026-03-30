@@ -100,7 +100,7 @@ export class ComplianceProcessor {
 
       await this.exportRepo.update(requestId, {
         status: ExportStatus.READY,
-        fileUrl: filePath, // Using local path for simplicity in this implementation
+        fileUrl: `http://localhost:3000/api/compliance/export/${requestId}/download`, // Secure download URL
         fileSize: fs.statSync(filePath).size,
         recordCount: splits.length,
         completedAt: new Date(),
